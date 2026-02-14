@@ -1,6 +1,8 @@
 package com.example.wattwait.ui.screen.settings
 
-import android.content.Intent
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,8 +26,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -58,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wattwait.ui.theme.SavingsGreen
+import com.example.wattwait.util.DebugSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +74,26 @@ fun SettingsScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
+
+    // Location permission launcher
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.values.any { it }
+        viewModel.onLocationPermissionResult(granted)
+    }
+
+    // Handle permission request
+    LaunchedEffect(uiState.showLocationPermissionRequest) {
+        if (uiState.showLocationPermissionRequest) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
 
     // Re-check permissions when screen is shown
     LaunchedEffect(Unit) {
@@ -181,20 +207,67 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
+                    // GPS Detection Button
+                    Button(
+                        onClick = {
+                            if (uiState.hasLocationPermission) {
+                                viewModel.detectLocation()
+                            } else {
+                                viewModel.requestLocationPermission()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isFetchingLocation
+                    ) {
+                        if (uiState.isFetchingLocation) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Detecting Location...")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MyLocation,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (uiState.hasLocationPermission)
+                                    "Detect My Location"
+                                else
+                                    "Enable Location & Detect"
+                            )
+                        }
+                    }
+
+                    // Show detected address if available
+                    if (uiState.detectedAddress != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.detectedAddress!!,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SavingsGreen
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Divider text
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.weight(1f).height(1.dp))
                         Text(
-                            text = "ZIP Code",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            text = "or enter manually",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp)
                         )
+                        Spacer(modifier = Modifier.weight(1f).height(1.dp))
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -207,7 +280,13 @@ fun SettingsScreen(
                             value = uiState.zipCode,
                             onValueChange = { if (it.length <= 5) viewModel.updateZipCode(it) },
                             modifier = Modifier.weight(1f),
-                            label = { Text("Enter ZIP Code") },
+                            label = { Text("ZIP Code") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = null
+                                )
+                            },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number,
                                 imeAction = ImeAction.Done
@@ -223,12 +302,12 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 focusManager.clearFocus()
                                 viewModel.saveLocation()
                             },
-                            enabled = !uiState.isLoading
+                            enabled = !uiState.isLoading && uiState.zipCode.length == 5
                         ) {
                             if (uiState.isLoading) {
                                 CircularProgressIndicator(
@@ -289,7 +368,9 @@ fun SettingsScreen(
                     if (uiState.availableRates.isEmpty()) {
                         Text(
                             text = if (uiState.zipCode.isEmpty())
-                                "Enter a ZIP code to find available rates"
+                                "Set your location to find available rates"
+                            else if (uiState.isFetchingRates)
+                                "Searching for rates..."
                             else
                                 "No rates found. Tap refresh to search.",
                             style = MaterialTheme.typography.bodyMedium,
@@ -329,6 +410,116 @@ fun SettingsScreen(
                                 }
                             }
                         }
+
+                        if (uiState.availableRates.size > 5) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "+${uiState.availableRates.size - 5} more rates available",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Debug Section
+            Text(
+                text = "Debug Options",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (uiState.debugModeEnabled)
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Debug Mode",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Override peak/off-peak for testing",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.debugModeEnabled,
+                            onCheckedChange = { viewModel.toggleDebugMode(it) }
+                        )
+                    }
+
+                    if (uiState.debugModeEnabled) {
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "Peak Time Override",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(Modifier.selectableGroup()) {
+                            DebugSettings.PeakTimeOverride.entries.forEach { override ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .selectable(
+                                            selected = uiState.peakTimeOverride == override,
+                                            onClick = { viewModel.setPeakTimeOverride(override) },
+                                            role = Role.RadioButton
+                                        )
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = uiState.peakTimeOverride == override,
+                                        onClick = null
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = when (override) {
+                                            DebugSettings.PeakTimeOverride.AUTO -> "Auto (use actual time)"
+                                            DebugSettings.PeakTimeOverride.FORCE_PEAK -> "Force Peak Hours"
+                                            DebugSettings.PeakTimeOverride.FORCE_OFF_PEAK -> "Force Off-Peak Hours"
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Current: ${when (uiState.peakTimeOverride) {
+                                DebugSettings.PeakTimeOverride.AUTO -> "Using actual time-based rates"
+                                DebugSettings.PeakTimeOverride.FORCE_PEAK -> "Overlay will show PEAK (warning)"
+                                DebugSettings.PeakTimeOverride.FORCE_OFF_PEAK -> "Overlay will show OFF-PEAK (green)"
+                            }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }

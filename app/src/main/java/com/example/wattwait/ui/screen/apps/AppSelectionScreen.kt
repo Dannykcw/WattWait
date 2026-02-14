@@ -20,9 +20,16 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.Badge
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,11 +72,51 @@ fun AppSelectionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("App Configuration") },
+                title = {
+                    if (uiState.isBatchMode) {
+                        Text("Select Apps (${uiState.selectedApps.size})")
+                    } else {
+                        Text("App Configuration")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
-                )
+                ),
+                actions = {
+                    if (uiState.isBatchMode) {
+                        IconButton(onClick = { viewModel.selectAllApps() }) {
+                            Icon(Icons.Default.SelectAll, "Select All")
+                        }
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(Icons.Default.Clear, "Clear Selection")
+                        }
+                        IconButton(onClick = { viewModel.toggleBatchMode() }) {
+                            Icon(Icons.Default.Delete, "Cancel")
+                        }
+                    } else {
+                        IconButton(onClick = { viewModel.toggleBatchMode() }) {
+                            Icon(Icons.Default.CheckCircle, "Batch Select")
+                        }
+                    }
+                }
             )
+        },
+        floatingActionButton = {
+            if (uiState.isBatchMode && uiState.selectedApps.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = { viewModel.showBatchConfigDialog() },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, "Add Selected")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add ${uiState.selectedApps.size}")
+                    }
+                }
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -102,14 +149,74 @@ fun AppSelectionScreen(
                 item { Spacer(modifier = Modifier.height(16.dp)) }
             }
 
+            // Quick Add Section - Show if there are suggested smart home apps
+            val suggestedApps = uiState.availableApps.filter { it.suggestedAppliance != null }
+            if (suggestedApps.isNotEmpty() && !uiState.isBatchMode) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FlashOn,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Quick Add",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${suggestedApps.size} recognized smart home apps found",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            TextButton(
+                                onClick = { viewModel.quickAddWithSuggestions() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Add All Recognized Apps")
+                            }
+                        }
+                    }
+                }
+
+                item { Spacer(modifier = Modifier.height(8.dp)) }
+            }
+
             // Available Apps Section
             item {
-                Text(
-                    text = "Add New App",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (uiState.isBatchMode) "Select Apps to Add" else "Add New App",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!uiState.isBatchMode && uiState.availableApps.size > 3) {
+                        TextButton(onClick = { viewModel.toggleBatchMode() }) {
+                            Text("Select Multiple")
+                        }
+                    }
+                }
             }
 
             if (uiState.availableApps.isEmpty() && !uiState.isLoading) {
@@ -130,10 +237,18 @@ fun AppSelectionScreen(
             }
 
             items(uiState.availableApps, key = { it.packageName }) { appInfo ->
-                AvailableAppCard(
-                    appInfo = appInfo,
-                    onClick = { viewModel.selectApp(appInfo) }
-                )
+                if (uiState.isBatchMode) {
+                    SelectableAppCard(
+                        appInfo = appInfo,
+                        isSelected = appInfo.packageName in uiState.selectedApps,
+                        onToggle = { viewModel.toggleAppSelection(appInfo.packageName) }
+                    )
+                } else {
+                    AvailableAppCard(
+                        appInfo = appInfo,
+                        onClick = { viewModel.selectApp(appInfo) }
+                    )
+                }
             }
         }
     }
@@ -142,12 +257,27 @@ fun AppSelectionScreen(
     if (uiState.showApplianceDialog && uiState.selectedApp != null) {
         ApplianceMappingDialog(
             appName = uiState.selectedApp!!.appName,
-            initialAppliance = uiState.editingMapping?.applianceType,
+            initialAppliance = uiState.editingMapping?.applianceType
+                ?: uiState.selectedApp!!.suggestedAppliance,
             initialEfficiency = uiState.editingMapping?.efficiencyCategory,
             onConfirm = { appliance, efficiency ->
                 viewModel.createMapping(appliance, efficiency)
             },
             onDismiss = { viewModel.dismissDialog() }
+        )
+    }
+
+    // Batch Configuration Dialog
+    if (uiState.showBatchConfigDialog) {
+        BatchConfigDialog(
+            selectedCount = uiState.selectedApps.size,
+            hasSuggestions = uiState.availableApps
+                .filter { it.packageName in uiState.selectedApps }
+                .any { it.suggestedAppliance != null },
+            onConfirm = { appliance, efficiency ->
+                viewModel.createBatchMappings(appliance, efficiency)
+            },
+            onDismiss = { viewModel.dismissBatchConfigDialog() }
         )
     }
 }
@@ -248,11 +378,19 @@ private fun AvailableAppCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Text(
-                text = appInfo.appName,
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = appInfo.appName,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                if (appInfo.suggestedAppliance != null) {
+                    Text(
+                        text = "Suggested: ${appInfo.suggestedAppliance.displayName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
 
             Icon(
                 imageVector = Icons.Default.Add,
@@ -261,6 +399,198 @@ private fun AvailableAppCard(
             )
         }
     }
+}
+
+@Composable
+private fun SelectableAppCard(
+    appInfo: InstalledAppInfo,
+    isSelected: Boolean,
+    onToggle: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggle() }
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            if (appInfo.icon != null) {
+                Image(
+                    bitmap = appInfo.icon.toBitmap(48, 48).asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.PhoneAndroid,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = appInfo.appName,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                if (appInfo.suggestedAppliance != null) {
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            text = appInfo.suggestedAppliance.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatchConfigDialog(
+    selectedCount: Int,
+    hasSuggestions: Boolean,
+    onConfirm: (ApplianceType, EfficiencyCategory) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedAppliance by remember { mutableStateOf(ApplianceType.GENERIC) }
+    var selectedEfficiency by remember { mutableStateOf(EfficiencyCategory.NORMAL) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Configure $selectedCount Apps") },
+        text = {
+            Column {
+                if (hasSuggestions) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Apps with recognized appliance types will use their suggested settings.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                Text(
+                    text = "Default Appliance Type",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "For apps without a suggestion",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(Modifier.selectableGroup()) {
+                    listOf(
+                        ApplianceType.GENERIC,
+                        ApplianceType.THERMOSTAT,
+                        ApplianceType.AIR_CONDITIONER,
+                        ApplianceType.LIGHTING
+                    ).forEach { appliance ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(36.dp)
+                                .selectable(
+                                    selected = selectedAppliance == appliance,
+                                    onClick = { selectedAppliance = appliance },
+                                    role = Role.RadioButton
+                                ),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedAppliance == appliance,
+                                onClick = null
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = appliance.displayName,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Efficiency Level",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(Modifier.selectableGroup()) {
+                    EfficiencyCategory.entries.forEach { efficiency ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(36.dp)
+                                .selectable(
+                                    selected = selectedEfficiency == efficiency,
+                                    onClick = { selectedEfficiency = efficiency },
+                                    role = Role.RadioButton
+                                ),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedEfficiency == efficiency,
+                                onClick = null
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = efficiency.displayName,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedAppliance, selectedEfficiency) }) {
+                Text("Add $selectedCount Apps")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

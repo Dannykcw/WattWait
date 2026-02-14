@@ -19,6 +19,15 @@
     <!-- Foreground service for overlay -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <!-- Query declarations for Android 11+ package visibility -->
+    <queries>
+        <!-- Query all apps with launcher intent -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".WattWaitApplication"
         android:allowBackup="true"

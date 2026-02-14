@@ -10,6 +10,7 @@ data class UserPreferencesEntity(
     val zipCode: String?,
     val latitude: Double?,
     val longitude: Double?,
+    val address: String? = null,
     val isServiceEnabled: Boolean = false,
     val hasCompletedOnboarding: Boolean = false,
     val selectedRateLabel: String?

@@ -36,7 +36,8 @@ class UserPreferencesRepository @Inject constructor(
         userPreferencesDao.updateLocation(
             zipCode = location.zipCode,
             latitude = location.latitude,
-            longitude = location.longitude
+            longitude = location.longitude,
+            address = location.address
         )
     }
 
@@ -89,7 +90,8 @@ class UserPreferencesRepository @Inject constructor(
                 zipCode = zipCode,
                 latitude = latitude,
                 longitude = longitude,
-                isGpsLocation = latitude != null && longitude != null && zipCode == null
+                address = address,
+                isGpsLocation = latitude != null && longitude != null
             )
         } else {
             null

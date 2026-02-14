@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+}
+
+// Load local.properties
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
 }
 
 android {
@@ -25,7 +34,7 @@ android {
         buildConfigField(
             "String",
             "OPENEI_API_KEY",
-            "\"${project.findProperty("OPENEI_API_KEY") ?: ""}\""
+            "\"${localProperties.getProperty("OPENEI_API_KEY") ?: ""}\""
         )
     }
 

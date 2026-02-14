@@ -12,6 +12,7 @@ data class UserLocation(
 
     val displayText: String
         get() = when {
+            !address.isNullOrBlank() && !zipCode.isNullOrBlank() -> "$address ($zipCode)"
             !address.isNullOrBlank() -> address
             !zipCode.isNullOrBlank() -> "ZIP: $zipCode"
             latitude != null && longitude != null -> "GPS Location"

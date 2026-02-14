@@ -7,6 +7,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
@@ -29,6 +31,7 @@ import java.time.LocalTime
 class OverlayService : Service() {
 
     companion object {
+        private const val TAG = "OverlayService"
         const val EXTRA_APP_NAME = "app_name"
         const val EXTRA_APPLIANCE_NAME = "appliance_name"
         const val EXTRA_ESTIMATED_COST = "estimated_cost"
@@ -39,6 +42,7 @@ class OverlayService : Service() {
         const val EXTRA_SAVINGS_AMOUNT = "savings_amount"
         const val EXTRA_SAVINGS_PERCENTAGE = "savings_percentage"
         const val EXTRA_ENVIRONMENTAL_MESSAGE = "environmental_message"
+        const val EXTRA_BLOCKING_MODE = "blocking_mode"
 
         private const val OVERLAY_DISPLAY_TIME_MS = 8000L
     }
@@ -58,10 +62,23 @@ class OverlayService : Service() {
     }
 
     private fun showOverlay(intent: Intent) {
+        Log.d(TAG, "showOverlay called")
+
+        // Check overlay permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Log.e(TAG, "Cannot draw overlays - permission not granted")
+            return
+        }
+
         // Dismiss any existing overlay
         dismissOverlay()
 
-        val appName = intent.getStringExtra(EXTRA_APP_NAME) ?: return
+        val appName = intent.getStringExtra(EXTRA_APP_NAME)
+        if (appName == null) {
+            Log.e(TAG, "No app name provided")
+            return
+        }
+        Log.d(TAG, "Showing overlay for: $appName")
         val applianceName = intent.getStringExtra(EXTRA_APPLIANCE_NAME) ?: return
         val estimatedCost = intent.getDoubleExtra(EXTRA_ESTIMATED_COST, 0.0)
         val currentRate = intent.getDoubleExtra(EXTRA_CURRENT_RATE, 0.0)
@@ -79,6 +96,10 @@ class OverlayService : Service() {
                 null
             }
         }
+
+        // Blocking mode: full screen overlay during peak hours
+        val isBlockingMode = intent.getBooleanExtra(EXTRA_BLOCKING_MODE, false)
+        Log.d(TAG, "Blocking mode: $isBlockingMode, isPeakTime: $isPeakTime")
 
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -101,34 +122,64 @@ class OverlayService : Service() {
                         savingsAmount = savingsAmount,
                         savingsPercentage = savingsPercentage,
                         environmentalMessage = environmentalMessage,
-                        onDismiss = { dismissOverlay() }
+                        isBlockingMode = isBlockingMode,
+                        onDismiss = { dismissOverlay() },
+                        onContinueAnyway = { dismissOverlay() }
                     )
                 }
             }
         }
 
-        val layoutParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 100
+        // Different layout params for blocking vs non-blocking mode
+        val layoutParams = if (isBlockingMode) {
+            // Full screen blocking overlay
+            WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+        } else {
+            // Non-blocking notification-style overlay
+            WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                y = 100
+            }
         }
 
-        windowManager.addView(overlayView, layoutParams)
+        try {
+            windowManager.addView(overlayView, layoutParams)
+            Log.d(TAG, "Overlay view added successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add overlay view", e)
+            return
+        }
 
-        // Auto-dismiss after timeout
-        dismissRunnable = Runnable { dismissOverlay() }
-        handler.postDelayed(dismissRunnable!!, OVERLAY_DISPLAY_TIME_MS)
+        // Auto-dismiss after timeout (only for non-blocking mode)
+        if (!isBlockingMode) {
+            dismissRunnable = Runnable { dismissOverlay() }
+            handler.postDelayed(dismissRunnable!!, OVERLAY_DISPLAY_TIME_MS)
+        }
     }
 
     private fun dismissOverlay() {

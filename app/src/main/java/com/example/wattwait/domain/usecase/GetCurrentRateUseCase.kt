@@ -3,13 +3,15 @@ package com.example.wattwait.domain.usecase
 import com.example.wattwait.domain.model.RateSchedule
 import com.example.wattwait.domain.repository.IRateRepository
 import com.example.wattwait.domain.repository.IUserPreferencesRepository
+import com.example.wattwait.util.DebugSettings
 import kotlinx.coroutines.flow.first
 import java.time.LocalDateTime
 import javax.inject.Inject
 
 class GetCurrentRateUseCase @Inject constructor(
     private val rateRepository: IRateRepository,
-    private val userPreferencesRepository: IUserPreferencesRepository
+    private val userPreferencesRepository: IUserPreferencesRepository,
+    private val debugSettings: DebugSettings
 ) {
     data class RateInfo(
         val currentRate: Double,
@@ -26,7 +28,13 @@ class GetCurrentRateUseCase @Inject constructor(
 
         val now = LocalDateTime.now()
         val currentRate = rateSchedule.getCurrentRate(now)
-        val isPeakTime = rateSchedule.isPeakTime(now)
+
+        // Check for debug overrides
+        val isPeakTime = when {
+            debugSettings.shouldForcePeak() -> true
+            debugSettings.shouldForceOffPeak() -> false
+            else -> rateSchedule.isPeakTime(now)
+        }
 
         return Result.success(
             RateInfo(

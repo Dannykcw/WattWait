@@ -24,7 +24,7 @@ object DatabaseModule {
             context,
             WattWaitDatabase::class.java,
             "wattwait_database"
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
 
     @Provides

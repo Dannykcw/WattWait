@@ -15,7 +15,7 @@ import com.example.wattwait.data.local.database.entity.UserPreferencesEntity
         RateScheduleEntity::class,
         UserPreferencesEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class WattWaitDatabase : RoomDatabase() {
