@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">WattWait</string>
+    <string name="accessibility_service_label">WattWait Energy Monitor</string>
+    <string name="accessibility_service_description">WattWait monitors when you open smart home apps to show you real-time electricity costs. This helps you save money by using appliances during off-peak hours when electricity is cheaper and cleaner.</string>
 </resources>
